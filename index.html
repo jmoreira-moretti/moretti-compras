@@ -798,22 +798,7 @@ tbody tr:last-child td{border-bottom:none;}
     </div>
 
 
-    <!-- ══ USUARIOS ══ -->
-    <div class="page" id="page-usuarios">
-      <div class="fbar" style="margin-bottom:18px;">
-        <input class="srch" id="usr-search" placeholder="Buscar usuario…" oninput="filterUsuarios()">
-        <select class="fsel" id="usr-filtro-rol" onchange="filterUsuarios()">
-          <option value="">Todos los roles</option>
-          <option value="admin">Admin</option>
-          <option value="analista">Analista</option>
-          <option value="gerente">Gerente</option>
-        </select>
-        <div style="flex:1"></div>
-        <button class="btn btn-red btn-sm" onclick="openOv('ov-nuevo-usuario')">+ Nuevo Usuario</button>
-      </div>
-      <div class="metrics-grid" id="usr-kpis" style="margin-bottom:18px;"></div>
-      <div id="usr-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;"></div>
-    </div>
+    
 
   
 
@@ -1054,7 +1039,7 @@ tbody tr:last-child td{border-bottom:none;}
     <div id="usr-modal-err" style="display:none;background:rgba(204,20,23,0.12);border:1px solid rgba(204,20,23,0.3);border-radius:8px;padding:10px 14px;font-size:13px;color:#e05555;margin-top:12px;"></div>
     <div style="margin-top:18px;display:flex;gap:9px;justify-content:flex-end;">
       <button class="btn btn-ghost" onclick="closeOv('ov-nuevo-usuario')">Cancelar</button>
-      <button class="btn btn-red" onclick="crearUsuario()">Crear Usuario</button>
+      <button class="btn btn-red" id="btn-crear-usuario" onclick="crearUsuario()">Crear Usuario</button>
     </div>
   </div>
 </div>
@@ -2230,43 +2215,69 @@ async function crearUsuario() {
   var email = document.getElementById('usr-email').value.trim();
   var password = document.getElementById('usr-password').value;
   var rol = document.getElementById('usr-rol').value;
-  var area = document.getElementById('usr-area').value||null;
+  var areaVal = document.getElementById('usr-area').value;
+  var area = areaVal ? areaVal : null;
   var errEl = document.getElementById('usr-modal-err');
-  var btn = document.getElementById('usr-save-btn');
-  errEl.style.display='none';
-  if (!nombre||!email||!password) { errEl.textContent='Completá todos los campos obligatorios'; errEl.style.display='block'; return; }
-  if (password.length<6) { errEl.textContent='La contraseña debe tener al menos 6 caracteres'; errEl.style.display='block'; return; }
+  var btn = document.getElementById('btn-crear-usuario');
 
-  btn.disabled=true; btn.textContent='Creando...';
+  errEl.style.display = 'none';
+  if (!nombre || !email || !password) {
+    errEl.textContent = 'Completá todos los campos obligatorios';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (password.length < 6) {
+    errEl.textContent = 'La contraseña debe tener al menos 6 caracteres';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Creando...'; }
+
   try {
-    // Crear en Supabase Auth con confirmación desactivada
-    var { data, error } = await sb.auth.signUp({
-      email, password,
-      options: { data: { nombre, apellido, rol: rol, area: area } }
+    var signUpResult = await sb.auth.signUp({
+      email: email,
+      password: password,
+      options: { data: { nombre: nombre, apellido: apellido, rol: rol, area: area } }
     });
-    if (error) { errEl.textContent=error.message; errEl.style.display='block'; btn.disabled=false; btn.textContent='Crear Usuario'; return; }
+    var data = signUpResult.data;
+    var error = signUpResult.error;
 
-    // Insertar perfil directamente (sin depender del trigger)
-    var userId = data.user ? data.user.id : null;
-    if (userId) {
-      var { error: perfilError } = await sb.from('perfiles').upsert({
-        id: userId, nombre, apellido, email, rol: rol, area: area||null, activo: true
-      }, { onConflict: 'id' });
-      if (perfilError) { errEl.textContent='Usuario creado pero error en perfil: '+perfilError.message; errEl.style.display='block'; }
+    if (error) {
+      errEl.textContent = error.message;
+      errEl.style.display = 'block';
+      if (btn) { btn.disabled = false; btn.textContent = 'Crear Usuario'; }
+      return;
     }
 
-    // Limpiar y cerrar
-    closeOv('ov-nuevo-usuario');
-    ['usr-nombre','usr-apellido','usr-email','usr-password'].forEach(function(id){ document.getElementById(id).value=''; });
-    await loadUsuarios();
+    var userId = data && data.user ? data.user.id : null;
+    if (userId) {
+      await sb.from('perfiles').upsert({
+        id: userId,
+        nombre: nombre,
+        apellido: apellido,
+        email: email,
+        rol: rol,
+        area: area,
+        activo: true
+      }, { onConflict: 'id' });
+    }
 
-    // Mostrar confirmación
-    alert('✓ Usuario creado: '+email+(data.user && !data.user.email_confirmed_at ? '\n\nEl usuario recibirá un email de confirmación.' : ''));
+    closeOv('ov-nuevo-usuario');
+    var campos = ['usr-nombre','usr-apellido','usr-email','usr-password'];
+    for (var i = 0; i < campos.length; i++) {
+      var el = document.getElementById(campos[i]);
+      if (el) el.value = '';
+    }
+    await loadUsuarios();
+    alert('Usuario creado correctamente: ' + email);
+
   } catch(e) {
-    errEl.textContent='Error inesperado: '+e.message;
-    errEl.style.display='block';
+    errEl.textContent = 'Error: ' + e.message;
+    errEl.style.display = 'block';
   }
-  btn.disabled=false; btn.textContent='Crear Usuario';
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Crear Usuario'; }
 }
 
 async function editarUsuario(id) {
